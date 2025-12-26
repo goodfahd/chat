@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -23,7 +22,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun ChatScreen(
     modifier: Modifier = Modifier,
-    viewModel: ChatViewModel = viewModel()
+    viewModel: ChatViewModel = viewModel(),
+    handleAction: (ChatAction) -> Unit
 ) {
     // 1. Create the permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -35,13 +35,6 @@ fun ChatScreen(
         }
     )
 
-    LaunchedEffect(viewModel.permissionGranted) {
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.BLUETOOTH
-            )
-        )
-    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
@@ -59,14 +52,25 @@ fun ChatScreen(
         )
         LazyColumn {
             items(viewModel.devices) {
-                TextButton(onClick = {}) {
-                    Text(text = it)
+                TextButton(onClick = {
+                    handleAction(ChatAction.ConnectToDevice(it))
+                }) {
+                    Text(text = it.name)
                 }
             }
         }
         Button(
             onClick = {
-                viewModel.handleAction(ChatAction.ScanForDevices)
+                if (viewModel.permissionGranted) {
+                    viewModel.handleAction(ChatAction.ScanForDevices)
+                } else {
+                    permissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_SCAN,
+                            Manifest.permission.BLUETOOTH_CONNECT
+                        )
+                    )
+                }
             },
             modifier = Modifier
         ) {

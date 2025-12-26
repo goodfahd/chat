@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.application
 import androidx.lifecycle.viewModelScope
+import fahd.pro.chat.domain.model.BluetoothDevice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -25,7 +26,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var message by mutableStateOf("")
         private set
 
-    var devices by mutableStateOf(emptyList<String>())
+    var devices by mutableStateOf(emptyList<BluetoothDevice>())
         private set
 
     private val bluetoothManager =
@@ -60,7 +61,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         availableDevices = bluetoothAdapter.bondedDevices.size
                         isLoading = false
                     }
-                    devices = bluetoothAdapter.bondedDevices.map { it.name }
+                    devices = bluetoothAdapter.bondedDevices.map {
+                        BluetoothDevice(it.name ?: "Unknown", it.address)
+                    }
                 } else {
                     message = "Bluetooth permission not granted"
                     isLoading = false
