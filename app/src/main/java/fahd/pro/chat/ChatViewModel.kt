@@ -1,89 +1,170 @@
 package fahd.pro.chat
 
 import android.app.Application
-import android.bluetooth.BluetoothManager
-import android.content.Context
-import android.content.pm.PackageManager
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.application
 import androidx.lifecycle.viewModelScope
+import fahd.pro.chat.data.AndroidBluetoothController
 import fahd.pro.chat.domain.model.BluetoothDeviceDomain
-import kotlinx.coroutines.delay
+import fahd.pro.chat.domain.model.BluetoothMessage
+import fahd.pro.chat.domain.model.ConnectionResult
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
-    var permissionGranted by mutableStateOf(false)
-        private set
 
-    var availableDevices by mutableIntStateOf(0)
-        private set
-    var isLoading by mutableStateOf(false)
-        private set
-    var message by mutableStateOf("")
-        private set
+    val btController = AndroidBluetoothController(application)
+    private val _state = MutableStateFlow(ChatState())
+    val state = _state.asStateFlow()
 
-    var devices by mutableStateOf(emptyList<BluetoothDeviceDomain>())
-        private set
-
-    private val bluetoothManager =
-        application.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-
+    init {
+        observeDeviceChanges()
+    }
     fun handleAction(action: ChatAction) {
         when (action) {
-            ChatAction.ScanForDevices -> {
-                scanForDevices()
+            ChatAction.StartDiscovery -> {
+                btController.startDiscovery()
             }
 
-            is ChatAction.ConnectToDevice -> {}
-        }
-    }
+            ChatAction.StartBluetoothServer -> {
+                viewModelScope.launch {
+                    btController.startBluetoothServer().collect { result ->
+                        when (result) {
+                            is ConnectionResult.ConnectionEstablished -> {
+                                _state.value = _state.value.copy(
+                                    messages = _state.value.messages + BluetoothMessage(
+                                        message = "Connection established",
+                                        senderName = "System",
+                                        isFromLocalUser = false
+                                    )
+                                )
+                            }
 
-    private fun scanForDevices() {
-        viewModelScope.launch {
-            isLoading = true
-            delay(1000)
-            val bluetoothAdapter = bluetoothManager.adapter
-            if (bluetoothAdapter != null) {
-                val hasBluetoothPermission = application.checkSelfPermission(
-                    "android.permission.BLUETOOTH_CONNECT"
-                ) == PackageManager.PERMISSION_GRANTED
-                if (hasBluetoothPermission) {
-                    if (bluetoothAdapter.isDiscovering) {
-                        bluetoothAdapter.cancelDiscovery()
-                        message = "Already Scanning for devices..."
-                        availableDevices = bluetoothAdapter.bondedDevices.size
-                        isLoading = false
-                    } else {
-                        message = "Scanning for devices..."
-                        bluetoothAdapter.startDiscovery()
-                        availableDevices = bluetoothAdapter.bondedDevices.size
-                        isLoading = false
+                            is ConnectionResult.Error -> {
+                                _state.value = _state.value.copy(
+                                    messages = _state.value.messages + BluetoothMessage(
+                                        message = result.message,
+                                        senderName = "System",
+                                        isFromLocalUser = false
+                                    )
+                                )
+                            }
+
+                            is ConnectionResult.TransferSucceeded -> {
+                                _state.value = _state.value.copy(
+                                    messages = _state.value.messages + result.message
+                                )
+                            }
+                        }
                     }
-                    devices = bluetoothAdapter.bondedDevices.map {
-                        BluetoothDeviceDomain(it.name ?: "Unknown", it.address)
-                    }
-                } else {
-                    message = "Bluetooth permission not granted"
-                    isLoading = false
-                    permissionGranted = false
                 }
             }
+
+            is ChatAction.ConnectToDevice -> {
+                viewModelScope.launch {
+                    btController.connectToDevice(action.bluetoothDeviceDomain).collect { result ->
+                        when (result) {
+                            is ConnectionResult.ConnectionEstablished -> {
+                                _state.value = _state.value.copy(
+                                    messages = _state.value.messages + BluetoothMessage(
+                                        message = "Connection established",
+                                        senderName = "System",
+                                        isFromLocalUser = false
+                                    )
+                                )
+                            }
+
+                            is ConnectionResult.Error -> {
+                                _state.value = _state.value.copy(
+                                    messages = _state.value.messages + BluetoothMessage(
+                                        message = result.message,
+                                        senderName = "System",
+                                        isFromLocalUser = false
+                                    )
+                                )
+                            }
+
+                            is ConnectionResult.TransferSucceeded -> {
+                                _state.value = _state.value.copy(
+                                    messages = _state.value.messages + result.message
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            is ChatAction.SendMessage -> {
+                viewModelScope.launch {
+                    val message = btController.trySendMessage(action.message)
+                    if (message != null) {
+                        _state.value = _state.value.copy(
+                            messages = _state.value.messages + message
+                        )
+                    }
+                }
+            }
+
+            is ChatAction.DisconnectFromDevice -> {
+                btController.release()
+            }
+
+            ChatAction.StopDiscovery -> {
+                btController.stopDiscovery()
+            }
+
+            is ChatAction.OnPermissionGranted -> {
+                _state.value = _state.value.copy(isPermissionGranted = action.granted)
+            }
         }
     }
 
-    fun onPermissionResult(isGranted: Boolean) {
-        permissionGranted = isGranted
-        if (isGranted) {
-            scanForDevices()
+    private fun observeDeviceChanges() {
+        viewModelScope.launch {
+            btController.scannedDevices
+                .onEach { devices ->
+                    _state.update { it.copy(scannedDevices = devices) }
+                }
+                .catch {
+                    // Optional: Handle errors in the flow
+                }
+                .collect() // Terminal operator to start collection
+        }
+        viewModelScope.launch {
+            btController.pairedDevices
+                .onEach { devices ->
+                    _state.update { it.copy(pairedDevices = devices) }
+                }
+                .catch {
+                    // Optional: Handle errors in the flow
+                }
+                .collect() // Terminal operator to start collection
         }
     }
 }
 
+data class ChatState(
+    val isLoading: Boolean = false,
+    val scannedDevices: List<BluetoothDeviceDomain> = emptyList(),
+    val pairedDevices: List<BluetoothDeviceDomain> = emptyList(),
+    val messages: List<BluetoothMessage> = emptyList(),
+    val isPermissionGranted: Boolean = false
+)
+
 sealed interface ChatAction {
-    data object ScanForDevices : ChatAction
+    data object StartDiscovery : ChatAction
+    data object StopDiscovery : ChatAction
+    data object StartBluetoothServer : ChatAction
+
     data class ConnectToDevice(val bluetoothDeviceDomain: BluetoothDeviceDomain) : ChatAction
+    data class DisconnectFromDevice(val bluetoothDeviceDomain: BluetoothDeviceDomain) : ChatAction
+    data class SendMessage(val message: String) : ChatAction
+
+    // Permission Granted
+    data class OnPermissionGranted(val granted: Boolean) : ChatAction
+
 }

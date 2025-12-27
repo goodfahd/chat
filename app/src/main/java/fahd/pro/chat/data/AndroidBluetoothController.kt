@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.util.Log
 import fahd.pro.chat.domain.model.BluetoothController
 import fahd.pro.chat.domain.model.BluetoothDeviceDomain
 import fahd.pro.chat.domain.model.BluetoothMessage
@@ -54,6 +55,7 @@ class AndroidBluetoothController(
             val device = intent?.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
             device?.let {
                 val domainDevice = it.toBluetoothDeviceDomain()
+                Log.d("BluetoothController", "Found device: $domainDevice")
                 _scannedDevices.update { devices ->
                     if (domainDevice in devices) devices else devices + domainDevice
                 }
@@ -103,7 +105,7 @@ class AndroidBluetoothController(
 
     override fun connectToDevice(device: BluetoothDeviceDomain): Flow<ConnectionResult> = flow {
         val bluetoothDevice = adapter?.getRemoteDevice(device.address)
-        currentClientSocket = bluetoothDevice?.createRfcommSocketToServiceRecord(MY_UUID)
+        currentClientSocket = bluetoothDevice?.createInsecureRfcommSocketToServiceRecord(MY_UUID)
 
         stopDiscovery() // Discovery slows down connections significantly
 
@@ -113,7 +115,7 @@ class AndroidBluetoothController(
             emitAll(readIncomingMessages(currentClientSocket!!))
         } catch (e: IOException) {
             currentClientSocket?.close()
-            emit(ConnectionResult.Error("Connection failed"))
+            emit(ConnectionResult.Error("Connection failed ${e.message}"))
         }
     }.onCompletion { release() }.flowOn(Dispatchers.IO)
 

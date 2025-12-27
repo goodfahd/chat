@@ -14,6 +14,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -24,13 +26,16 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     viewModel: ChatViewModel = viewModel()
 ) {
+    val state by viewModel.state.collectAsState()
+
     // 1. Create the permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { permissions ->
             // Check if BLUETOOTH_SCAN was granted. Handle the result in the ViewModel.
             val isGranted = permissions[Manifest.permission.BLUETOOTH_SCAN] ?: false
-            viewModel.onPermissionResult(isGranted)
+            viewModel.handleAction(ChatAction.OnPermissionGranted(isGranted))
+
         }
     )
 
@@ -41,45 +46,81 @@ fun ChatScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = if (viewModel.isLoading) "Loading..." else "Available Devices: ${viewModel.availableDevices}",
-            style = MaterialTheme.typography.bodyLarge
-        )
-        Text(
-            text = viewModel.message,
-            style = MaterialTheme.typography.labelSmall
-        )
+        Text(text = "Permission: ${state.isPermissionGranted}")
         LazyColumn {
-            items(viewModel.devices) {
+            item {
+                Text(
+                    text = "Messages",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+            items(state.messages) {
+                Text(text = it.message)
+            }
+            item {
+                Text(
+                    text = "Paired Devices",
+                    style = MaterialTheme.typography.titleLarge
+                )
+
+            }
+            items(state.pairedDevices) {
                 TextButton(onClick = {
                     viewModel.handleAction(ChatAction.ConnectToDevice(it))
                 }) {
-                    Text(text = it.name)
+                    it.name?.let { text -> Text(text = text) }
+                }
+            }
+            item {
+                Text(
+                    text = "Scanned Devices",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+            items(state.scannedDevices) {
+                TextButton(onClick = {
+                    viewModel.handleAction(ChatAction.ConnectToDevice(it))
+                }) {
+                    it.name?.let { text -> Text(text = text) }
                 }
             }
         }
         Button(
             onClick = {
-                if (viewModel.permissionGranted) {
-                    viewModel.handleAction(ChatAction.ScanForDevices)
+                if (state.isPermissionGranted) {
+                    viewModel.handleAction(ChatAction.StartDiscovery)
                 } else {
                     permissionLauncher.launch(
                         arrayOf(
                             Manifest.permission.BLUETOOTH_SCAN,
-                            Manifest.permission.BLUETOOTH_CONNECT
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.ACCESS_FINE_LOCATION
                         )
                     )
                 }
-            },
-            modifier = Modifier
+            }
         ) {
             Text(
-                text =
-                    if (viewModel.availableDevices == 0) {
-                        "Scan for Devices"
-                    } else {
-                        "Start Chat"
-                    }
+                text = "Start Discovery"
+            )
+        }
+        Button(
+            onClick = {
+                if (state.isPermissionGranted) {
+                    viewModel.handleAction(ChatAction.StartBluetoothServer)
+                } else {
+                    permissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_SCAN,
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.ACCESS_FINE_LOCATION
+                        )
+                    )
+                }
+            }
+        ) {
+            Text(
+                text = "Start Server"
             )
         }
     }
