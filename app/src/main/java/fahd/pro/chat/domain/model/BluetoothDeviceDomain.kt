@@ -1,10 +1,6 @@
 package fahd.pro.chat.domain.model
 
-data class BluetoothDevice(
+data class BluetoothDeviceDomain(
     val name: String,
     val address: String
-)
-
-data class BluetoothMessage(
-    val message: String
 )

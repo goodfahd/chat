@@ -22,8 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun ChatScreen(
     modifier: Modifier = Modifier,
-    viewModel: ChatViewModel = viewModel(),
-    handleAction: (ChatAction) -> Unit
+    viewModel: ChatViewModel = viewModel()
 ) {
     // 1. Create the permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -53,7 +52,7 @@ fun ChatScreen(
         LazyColumn {
             items(viewModel.devices) {
                 TextButton(onClick = {
-                    handleAction(ChatAction.ConnectToDevice(it))
+                    viewModel.handleAction(ChatAction.ConnectToDevice(it))
                 }) {
                     Text(text = it.name)
                 }
